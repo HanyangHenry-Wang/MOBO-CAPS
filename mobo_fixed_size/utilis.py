@@ -49,7 +49,7 @@ def initialize_model(train_x, train_obj,problem):
         train_y = train_obj[..., i : i + 1]
        
         model_temp =  SingleTaskGP(train_x, train_y, outcome_transform=Standardize(m=1))
-        # model_temp.likelihood.noise_covar.register_constraint("raw_noise", Interval(1e-8,1e-7)) 
+        model_temp.likelihood.noise_covar.register_constraint("raw_noise", Interval(1e-8,1e-7)) 
 
 
         models.append(model_temp)
