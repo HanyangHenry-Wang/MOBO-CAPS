@@ -531,34 +531,10 @@ if __name__ == '__main__':
                 
                 else:
 
-                    candidates_fixedsize, val_fixedsize = optimize_qehvi_fixed_size_PF('EHVI_M',model_qehvi,M_type,choice_M, 
+                    candidates, val = optimize_qehvi_fixed_size_PF('EHVI_M',model_qehvi,M_type,choice_M, 
                                                                                     pareto_set_M, train_x_qehvi, 
                                                                                     train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE)  
                     
-
-                    candidates_ehvi, _ = optimize_qehvi_fixed_size_PF('EHVI',model_qehvi,0,pareto_front_temp, 
-                                                                    pareto_set_M,train_x_qehvi, 
-                                                                    train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE)  
-                    
-                    partitioning = FastNondominatedPartitioning(ref_point=ref_point,Y=choice_M.reshape(M,-1))
-                    acq_func = qExpectedHypervolumeImprovement_FixedSizedParetoFront(
-                                                                                        model=model_qehvi,
-                                                                                        ref_point=ref_point,
-                                                                                        partitioning=partitioning,
-                                                                                        M_size = M,
-                                                                                        pareto_front=choice_M,
-                                                                                        sampler=sampler,)
-                    
-                    val_ehvi = acq_func(candidates_ehvi)
-                    
-
-                    if val_fixedsize.item()>val_ehvi.item():
-                        candidates = candidates_fixedsize
-                        val = val_fixedsize.item()
-                    else:
-                        candidates = candidates_ehvi
-                        val = val_ehvi.item()
-
 
 
             elif type == 'HD_EI':
