@@ -81,8 +81,7 @@ class SnAr(MultiObjectiveTestProblem):
     num_objectives = 2
     _bounds = [(0.5, 2.0), (1.0, 5.0), (0.1, 0.5), (30, 120)]
     _ref_point = [0, 120]
-    #_ref_point = [-5.5, 5]
-    #_ref_point = [-7.5, 3.]
+
 
     # Molecular weights (g/mol)
     molecular_weights = [159.09, 71.12, 210.21, 210.21, 261.33]

@@ -289,8 +289,6 @@ if __name__ == '__main__':
 
         for iter in range(iter_num):
 
-            t0 = time.monotonic()
-
             torch.manual_seed(1234+iter)
 
             # fit the models
@@ -317,7 +315,8 @@ if __name__ == '__main__':
                 else:
                     raise e
     
-
+    
+            t0 = time.monotonic()
             # acquisition function
             sampler = SobolQMCNormalSampler(sample_shape=torch.Size([SAMPLE_NUM])) #StochasticSampler SobolQMCNormalSampler
 

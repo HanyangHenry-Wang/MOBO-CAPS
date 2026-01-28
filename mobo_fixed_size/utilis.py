@@ -113,7 +113,7 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
         return P
 
     if d == 2:
-        # ---- exact 2D DP (same as before; unchanged) ----
+        # exact 2D DP 
         P_min = -P
         r_min = -ref_point
 
@@ -166,7 +166,7 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
 
     else:
         hv = Hypervolume(ref_point=ref_point.to(device=P.device, dtype=P.dtype))
-        # Filter invalid points
+
         good = (P > ref_point.to(device=P.device, dtype=P.dtype)).all(dim=1)
         P = P[good]
         if P.size(0) <= M:
@@ -178,7 +178,7 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
             v = hv.compute(Y)
             return float(v.detach().cpu().item()) if isinstance(v, torch.Tensor) else float(v)
 
-        # ---- single-box volumes (for UB heuristic) ----
+
         single_vol = torch.prod(torch.clamp(P - ref_point, min=0), dim=1).cpu().tolist()
 
         # ---- greedy LB ----
@@ -203,7 +203,6 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
 
         best_set, best_hv = greedy_lb()
 
-        # ---- order candidates by box volume desc ----
         order = sorted(range(K), key=lambda i: single_vol[i], reverse=True)
         ordered_vols = [single_vol[i] for i in order]
         prefix = [0.0]
@@ -214,7 +213,7 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
             end = min(len(ordered_vols), pos + cnt)
             return prefix[end] - prefix[pos]
 
-        # ---- cache HVs of partial subsets ----
+
         from functools import lru_cache
         @lru_cache(maxsize=None)
         def hv_of_indices(fro_idxs):
@@ -244,7 +243,7 @@ def select_best_m_pareto_solutions_fast(obj_tensor: torch.Tensor, M: int, ref_po
                 new_idxs = chosen_idxs + [i]
                 hv_new = hv_of_indices(frozenset(new_idxs))
                 dfs(pos + 1, new_idxs, hv_new)
-                # optional quick sibling pruning
+
                 if capacity - 1 > 0:
                     UB_next = hv_new + sum_top_from(pos + 1, capacity - 1)
                     if UB_next <= best_hv + 1e-15:
