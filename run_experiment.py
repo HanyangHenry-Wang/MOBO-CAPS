@@ -26,6 +26,9 @@ if __name__ == '__main__':
     compute_sample_box_decomposition,
     random_search_optimizer,
     sample_optimal_points,)
+    from botorch.acquisition.multi_objective.hypervolume_knowledge_gradient import (
+                                                                                _get_hv_value_function,
+                                                                                qHypervolumeKnowledgeGradient,)
 
 
     import warnings
@@ -38,7 +41,7 @@ if __name__ == '__main__':
     from mobo_fixed_size.utilis import generate_initial_data,initialize_model,select_best_m_pareto_solutions_fast
     from mobo_fixed_size.acquisition import (optimize_qehvi_fixed_size_PF,
                                              qExpectedHypervolumeImprovement_FixedSizedParetoFront,get_reference_chebyshev_scalarization,
-                                             qExpectedHypervolumeImprovement)
+                                             qExpectedHypervolumeImprovement,get_current_caps_value)
     from mobo_fixed_size.obj_function import VLMOP3,SnAr,Four_bar_truss_design,VLMOP2
 
     import random
@@ -336,8 +339,8 @@ if __name__ == '__main__':
                 for _ in range(1):
                     weights = sample_simplex(obj_num).squeeze()
                     objective = GenericMCObjective(
-                        get_chebyshev_scalarization(weights=weights, Y=pred)
-                    )
+                        get_chebyshev_scalarization(weights=weights, Y=pred))
+
                     
                     acq_func = qNoisyExpectedImprovement(  
                         model=model_qehvi,
@@ -429,89 +432,7 @@ if __name__ == '__main__':
                                                         raw_samples=RAW_SAMPLES,  
                                                         options=OPTIONS)
                     
-
             
-            elif  type == 'JES':
-                try:
-                    standard_bounds = torch.zeros(2, problem.dim)
-                    standard_bounds[1] = 1
-                
-                    train_x_qehvi = train_x_qehvi.to(dtype=torch.double)
-                    train_obj_qehvi = train_obj_qehvi.to(dtype=torch.double)
-                    train_obj_true_qehvi = train_obj_true_qehvi.to(dtype=torch.double)
-                    ref_point = ref_point.to(dtype=torch.double)
-
-                    optimizer_kwargs = {
-                            "pop_size": 500,
-                            "max_tries": 10,
-                        }
-                    num_pareto_samples = 4
-                    num_pareto_points = 4
-
-                    ps, pf = sample_optimal_points(
-                                                model=model_qehvi,
-                                                bounds=problem.bounds,
-                                                num_samples=num_pareto_samples,
-                                                num_points=num_pareto_points,
-                                                optimizer=random_search_optimizer,
-                                                optimizer_kwargs=optimizer_kwargs,
-                                            )
-                    
-
-                    hypercell_bounds = compute_sample_box_decomposition(pf)
-
-                    # Here we use the lower bound estimates for the MES and JES
-                    jes_lb = qLowerBoundMultiObjectiveJointEntropySearch(
-                        model=model_qehvi,
-                        pareto_sets=ps,
-                        pareto_fronts=pf,
-                        hypercell_bounds=hypercell_bounds,
-                        estimation_type="LB",
-                    )
-                
-                    candidates, val = optimize_acqf(
-                                acq_function=jes_lb,
-                                bounds=standard_bounds,
-                                q=1,
-                                num_restarts=3,
-                                raw_samples=256,
-                                sequential=True,
-                                options={"batch_limit": 5,"maxiter": 200, "sample_around_best": False} 
-                            )
-
-                except:
-                    with torch.no_grad():
-                        pred = model_qehvi.posterior(train_x_qehvi).mean
-                    
-                
-                    acq_func_list = []
-                    for _ in range(1):
-                        weights = sample_simplex(obj_num).squeeze()
-                        objective = GenericMCObjective(
-                            get_chebyshev_scalarization(weights=weights, Y=pred)
-                        )
-                        
-                        
-                        acq_func = qNoisyExpectedImprovement(  
-                            model=model_qehvi,
-                            objective=objective,
-                            X_baseline=train_x_qehvi,
-                            sampler=sampler,
-                            prune_baseline=True,
-                        )
-                        acq_func_list.append(acq_func)
-
-
-                    # optimize
-                    standard_bounds = torch.zeros(2, problem.dim)
-                    standard_bounds[1] = 1
-
-                    candidates, val = optimize_acqf_list(
-                                                    acq_function_list=acq_func_list,
-                                                    bounds=standard_bounds,
-                                                    num_restarts=NUM_RESTARTS,
-                                                    raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-                                                    options=OPTIONS)
                     
 
             elif type == 'EHVI':
@@ -520,8 +441,42 @@ if __name__ == '__main__':
                                                             train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE)  
           
 
+            if type == 'SMS-EGO' :
+                candidates, val = optimize_qehvi_fixed_size_PF('UCB',model_qehvi,0,pareto_front_temp,
+                                                                pareto_set_M,train_x_qehvi, 
+                                                            train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE)  
+                
 
-            elif type == 'EHVI_M':
+
+            if type == 'HVKG':
+                current_value, _ = get_current_caps_value(model_qehvi,
+                                                        ref_point=ref_point,
+                                                        dim=problem.dim,
+                                                        M=M,)
+
+                standard_bounds = torch.zeros(2, problem.dim)
+                standard_bounds[1] = 1
+                
+                acqf = qHypervolumeKnowledgeGradient(
+                    model=model_qehvi,
+                    ref_point=ref_point,
+                    num_fantasies=8,
+                    num_pareto=M,
+                    current_value=current_value,
+                    use_posterior_mean=True)
+                
+
+                candidates, val = optimize_acqf(
+                    acq_function=acqf,
+                    bounds=standard_bounds,
+                    q=1,
+                    num_restarts=1,
+                    raw_samples=RAW_SAMPLES,
+                    sequential=False)
+                
+
+
+            elif type == 'REHVI': 
 
                 if choice_M.shape[0]<M_type: 
                     candidates, val = optimize_qehvi_fixed_size_PF('EHVI',model_qehvi,0,pareto_front_temp,
@@ -536,7 +491,7 @@ if __name__ == '__main__':
                     
 
 
-            elif type == 'HD_EI':
+            elif type == 'CHO-EI': 
                 if choice_M.shape[0]<M_type: 
                     print('not enough M')
                     candidates, val = optimize_qehvi_fixed_size_PF('EHVI',model_qehvi,0,pareto_front_temp,
@@ -565,7 +520,7 @@ if __name__ == '__main__':
 
 
 
-            elif type == 'HD_logEI':
+            elif type == 'CHO-logEI': 
                 if choice_M.shape[0]<M_type: 
                     print('not enough M')
                     candidates, val = optimize_qehvi_fixed_size_PF('EHVI',model_qehvi,0,pareto_front_temp,
@@ -594,31 +549,25 @@ if __name__ == '__main__':
 
               
 
-            elif type == 'HD_UCB':
-                if choice_M.shape[0]<M_type: 
-                    print('not enough M')
-                    candidates, val = optimize_qehvi_fixed_size_PF('EHVI',model_qehvi,0,pareto_front_temp,
-                                                                pareto_set_M,train_x_qehvi, 
-                                                            train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE)  
-                    
-                else:
-                    candidates_fixedsize, val_fixedsize = optimize_qehvi_fixed_size_PF('HD_UCB',model_qehvi,M_type,choice_M, 
-                                                                        pareto_set_M, train_x_qehvi, 
-                                                                        train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE,beta=2.)  
-                    
+            elif type == 'CHO-UCB':  
+              
+                candidates_fixedsize, val_fixedsize = optimize_qehvi_fixed_size_PF('HD_UCB',model_qehvi,M_type,choice_M, 
+                                                                    pareto_set_M, train_x_qehvi, 
+                                                                    train_obj_qehvi,sampler,ref_point,problem,batch_size=BATCH_SIZE,beta=2.)  
+                
 
-                    partitioning = FastNondominatedPartitioning(ref_point=ref_point,Y=pareto_front_temp)
-                    acq_func = qExpectedHypervolumeImprovement(
-                                                                model=model_qehvi,
-                                                                ref_point=ref_point,
-                                                                partitioning=partitioning,
-                                                                sampler=sampler,
-                                                                )
-                        
+                partitioning = FastNondominatedPartitioning(ref_point=ref_point,Y=pareto_front_temp)
+                acq_func = qExpectedHypervolumeImprovement(
+                                                            model=model_qehvi,
+                                                            ref_point=ref_point,
+                                                            partitioning=partitioning,
+                                                            sampler=sampler,
+                                                            )
                     
-                    check_val = acq_func(candidates_fixedsize.reshape(M_type,1,-1))
-                    candidates = candidates_fixedsize[torch.argmax(check_val)].reshape(1,-1)
-                    val = torch.max(check_val)
+                
+                check_val = acq_func(candidates_fixedsize.reshape(M_type,1,-1))
+                candidates = candidates_fixedsize[torch.argmax(check_val)].reshape(1,-1)
+                val = torch.max(check_val)
 
 
         
