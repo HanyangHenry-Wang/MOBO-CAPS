@@ -62,6 +62,7 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
     # ============================================================
     problem_information = []
 
+
     temp = {}
     temp["experiment_name"] = "BraninCurrin2"
     temp["input_dim"] = 2
@@ -138,10 +139,22 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
     problem_information.append(temp)
 
  
+    temp={}
+    temp['experiment_name'] = 'Penicillin'  
+    temp['input_dim'] = 7
+    temp['obj_num'] = 3
+    temp['problem'] = Penicillin(negate=True) 
+    temp['ref_point'] = Penicillin(negate=True).ref_point 
+    temp["n_init"] = min(3*4,10)
+    temp['NOISE_SE'] = 0.
+    temp['iter_num'] = 100 
+    problem_information.append(temp)
 
     # ============================================================
     # Run all selected problems
     # ============================================================
+
+
     for information in problem_information:
 
         function_name = information["experiment_name"]
@@ -166,17 +179,15 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
         print("ref_point = ", ref_point)
         print("#" * 100)
 
-        filename = [function_name, "JES", str(random_seed)]
+        M_given = 3
+
+        filename = [function_name, "JES",f'M={M_given}', str(random_seed)]
         results_filename = "_".join(filename)
 
         hvs_all = []
         PF_number_list = []
         time_record = []
 
-        # CAPS evaluation records
-        hvs_M_list = []
-        for M in [1, 2, 3, 4, 5]:
-            hvs_M_list.append([])
 
         # ---------------------------------------------------------
         # initial data
@@ -201,16 +212,18 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
         print("initial HV = ", hvs_all[-1])
         print("initial PF size = ", PF_number_list[-1])
 
-        # initial CAPS evaluation
-        for M in [1, 2, 3, 4, 5]:
-            if pareto_front_temp.shape[0] == 0:
-                hvs_M_list[M - 1].append(0.0)
-            else:
-                choice_M = select_best_m_pareto_solutions_fast(
-                    pareto_front_temp, M, ref_point
-                )
-                hv_computer = Hypervolume(ref_point)
-                hvs_M_list[M - 1].append(hv_computer.compute(choice_M))
+        hvs_M = []
+        
+
+        if pareto_front_temp.shape[0] == 0:
+            hvs_M.append(0.0)
+        else:
+            choice_M = select_best_m_pareto_solutions_fast(
+                pareto_front_temp, M_given, ref_point
+            )
+            hv_computer = Hypervolume(ref_point)
+            hvs_M.append(hv_computer.compute(choice_M))
+
 
         # ---------------------------------------------------------
         # BO loop
@@ -224,7 +237,7 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(1234 + it)
 
-            
+            t0 = time.monotonic()
 
             # Step 1. fit model
             print("step 1: fit GP model")
@@ -238,16 +251,14 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
             fit_gpytorch_mll(mll)
 
             # Step 2. sample Pareto sets / fronts
-            t0 = time.monotonic()
-            
             print("step 2: sample Pareto sets / fronts")
             optimizer_kwargs = {
                 "pop_size": 2000,
                 "max_tries": 30,
             }
 
-            num_pareto_samples = 4
-            num_pareto_points = 4
+            num_pareto_samples = M_given
+            num_pareto_points = M_given
 
             try:
                 ps, pf = sample_optimal_points(
@@ -300,7 +311,7 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
             # Step 5. optimize JES
             print("step 5: optimize JES acquisition")
 
-            raw_samples = 512
+            raw_samples = 256
             num_restarts = 12
 
             X_rnd = draw_sobol_samples(
@@ -375,18 +386,17 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
 
             PF_number_list.append(pareto_front_temp.shape[0])
 
-            # Step 9. CAPS post-selection for M = 1,...,5
-            for M in [1, 2, 3, 4, 5]:
-                if pareto_front_temp.shape[0] == 0:
-                    hvs_M_list[M - 1].append(0.0)
-                else:
-                    choice_M = select_best_m_pareto_solutions_fast(
-                        pareto_front_temp, M, ref_point
-                    )
-                    hv_computer = Hypervolume(ref_point)
-                    hvs_M_list[M - 1].append(hv_computer.compute(choice_M))
 
-            time_record.append(t1 - t0)
+
+            if pareto_front_temp.shape[0] == 0:
+                hvs_M.append(0.0)
+            else:
+                choice_M = select_best_m_pareto_solutions_fast(
+                    pareto_front_temp, M_given, ref_point
+                )
+                hv_computer = Hypervolume(ref_point)
+                hvs_M.append(hv_computer.compute(choice_M))
+
 
             print(
                 f"Batch {it:>2}: Hypervolume = {hvs_all[-1]:>4.6f}, "
@@ -394,26 +404,18 @@ if __name__ == '__main__':  # Standard MOBO JES, tutorial logic + multiple test 
             )
             print("full pareto set size = ", pareto_front_temp.shape)
 
-            for M in [1, 2, 3, 4, 5]:
-                print(f"M={M}: {hvs_M_list[M - 1][-1]}")
-
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            save_dir = os.path.join(script_dir, "JES_results")
-            os.makedirs(save_dir, exist_ok=True)
-
-            print("saving to:", save_dir)
-
-            for M in [1, 2, 3, 4, 5]:                             
-                try:
-                    np.savetxt(f'exp/M{M}/{results_filename}', hvs_M_list[M-1])
-                except:
-                    os.makedirs(f'exp/M{M}', exist_ok=True)
-                    np.savetxt(f'exp/M{M}/{results_filename}', hvs_M_list[M-1])
+            # save the result
+            try:
+                np.savetxt(f'exp/M{M_given}/{results_filename}', hvs_M)
+            except:
+                os.makedirs(f'exp/M{M_given}', exist_ok=True)
+                np.savetxt(f'exp/M{M_given}/{results_filename}', hvs_M)
 
 
 
         print("total time = ", np.sum(np.array(time_record)))
 
+
+
         print("\nfinal full HV = ", hvs_all[-1])
         print("final M-HV values:")
-
